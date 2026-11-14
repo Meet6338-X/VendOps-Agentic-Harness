@@ -1,0 +1,29 @@
+{
+  "gate_passed": true,
+  "failures": [],
+  "report": {
+    "total_cases": 420,
+    "overall_tcr": 1.0,
+    "overall_wer": 0.006,
+    "worst_slice_tcr": 1.0,
+    "worst_slice_wer": 0.0482,
+    "worst_tcr_slice_name": "script:devanagari",
+    "worst_wer_slice_name": "noise_level:high",
+    "hallucinated_erp_tool_calls": 0,
+    "handling_time_reduction_pct": 97.17,
+    "ablation": {
+      "token_reduction_pct": 45.92,
+      "uncompressed_tokens": 200465,
+      "compressed_tokens": 108411,
+      "latency_speedup_ms": 25.07,
+      "tcr_parity": 0.0
+    },
+    "gate_passed": true,
+    "gate_reasons": []
+  },
+  "thresholds": {
+    "max_entity_wer": 0.03,
+    "min_worst_slice_tcr": 0.85,
+    "max_hallucinations": 0
+  }
+}
