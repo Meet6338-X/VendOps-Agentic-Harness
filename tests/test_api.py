@@ -193,3 +193,43 @@ async def test_error_handling(async_client: httpx.AsyncClient) -> None:
     # 422 for invalid dispute input
     res_invalid = await async_client.post("/api/v1/disputes", json={"message": ""})
     assert res_invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ui_additive_endpoints(async_client: httpx.AsyncClient) -> None:
+    """Verify newly added UI endpoints: list disputes, single dispute, evals, ERP browse, audit."""
+    # 1. Create a dispute
+    init_res = await async_client.post(
+        "/api/v1/disputes",
+        json={"message": "Inquiry on INV-20240101 under PO-20240101."},
+    )
+    assert init_res.status_code == 200
+    thread_id = init_res.json()["thread_id"]
+
+    # 2. GET /api/v1/disputes
+    list_res = await async_client.get("/api/v1/disputes")
+    assert list_res.status_code == 200
+    disputes = list_res.json()
+    assert any(d["thread_id"] == thread_id for d in disputes)
+
+    # 3. GET /api/v1/disputes/{thread_id}
+    get_res = await async_client.get(f"/api/v1/disputes/{thread_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["thread_id"] == thread_id
+
+    # 4. GET /api/v1/evals/latest
+    eval_res = await async_client.get("/api/v1/evals/latest")
+    assert eval_res.status_code == 200
+
+    # 5. GET /api/v1/erp/*
+    inv_res = await async_client.get("/api/v1/erp/invoices")
+    assert inv_res.status_code == 200
+    assert isinstance(inv_res.json(), list)
+
+    audit_res = await async_client.get("/api/v1/audit")
+    assert audit_res.status_code == 200
+    assert isinstance(audit_res.json(), list)
+
+    guard_res = await async_client.get("/api/v1/guard/events")
+    assert guard_res.status_code == 200
+    assert isinstance(guard_res.json(), list)

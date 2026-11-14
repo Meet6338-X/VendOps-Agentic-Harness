@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import date, datetime
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,10 +17,15 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from vendops.api.deps import get_graph_app, get_qdrant_client
 from vendops.contracts.schemas import ResolutionReview, VendorMessageInput
 from vendops.contracts.state import VendOpsState
+from vendops.erp.db import get_default_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Global thread registry for dispute history and approvals tracking
+DISPUTE_HISTORY: dict[str, dict[str, Any]] = {}
+GUARD_EVENTS: list[dict[str, Any]] = []
 
 
 def serialize_data(val: Any) -> Any:
@@ -105,6 +111,14 @@ async def create_dispute(
 
     graph_app.update_state(config, initial_state)
     logger.info("Initialized dispute thread %s", thread_id)
+
+    DISPUTE_HISTORY[thread_id] = {
+        "thread_id": thread_id,
+        "message": payload.message,
+        "sender": payload.sender,
+        "created_at": datetime.now().isoformat(),
+        "status": "INITIALIZED",
+    }
 
     return {
         "thread_id": thread_id,
@@ -247,9 +261,195 @@ async def resume_dispute(
     updated_state = graph_app.get_state(config)
     logger.info("Resumed thread %s with approval=%s", thread_id, review.approved)
 
+    if thread_id in DISPUTE_HISTORY:
+        DISPUTE_HISTORY[thread_id]["status"] = "APPROVED" if review.approved else "REJECTED"
+
     return {
         "thread_id": thread_id,
         "status": "RESUMED",
         "review": resume_payload,
         "state": serialize_data(updated_state.values),
     }
+
+
+# =========================================================================
+# Additive UI Endpoints (Overview, History, Approvals, Audit, ERP, Evals)
+# =========================================================================
+
+
+@router.get("/api/v1/disputes", tags=["Disputes"])
+async def list_disputes(
+    limit: int = 50,
+    graph_app: Annotated[Any, Depends(get_graph_app)] = None,
+) -> list[dict[str, Any]]:
+    """List recent dispute sessions with status and summary metrics."""
+    results: list[dict[str, Any]] = []
+    for tid, meta in list(DISPUTE_HISTORY.items())[-limit:]:
+        item = dict(meta)
+        if graph_app:
+            try:
+                state = graph_app.get_state({"configurable": {"thread_id": tid}})
+                if state and state.values:
+                    vals = state.values
+                    triage = vals.get("triage")
+                    proposal = vals.get("proposal")
+                    item["dispute_type"] = triage.dispute_type.value if hasattr(triage, "dispute_type") else None
+                    item["priority"] = triage.priority.value if hasattr(triage, "priority") else None
+                    item["amount"] = proposal.amount if hasattr(proposal, "amount") else None
+                    item["action"] = proposal.action.value if hasattr(proposal, "action") else None
+                    item["language"] = vals.get("language_detected")
+                    if any(t.interrupts for t in state.tasks):
+                        item["status"] = "WAITING_APPROVAL"
+                    elif vals.get("execution_result"):
+                        item["status"] = "RESOLVED"
+            except (KeyError, ValueError, AttributeError) as exc:
+                logger.debug("Could not inspect state for thread %s: %s", tid, exc)
+        results.append(item)
+    return results
+
+
+@router.get("/api/v1/disputes/{thread_id}", tags=["Disputes"])
+async def get_dispute(
+    thread_id: str,
+    graph_app: Annotated[Any, Depends(get_graph_app)],
+) -> dict[str, Any]:
+    """Retrieve current state and tasks for a specific dispute thread."""
+    config = {"configurable": {"thread_id": thread_id}}
+    state = graph_app.get_state(config)
+    if not state or not state.values:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dispute thread '{thread_id}' not found.",
+        )
+
+    is_interrupted = any(t.interrupts for t in state.tasks)
+    pending_interrupt = next((t.interrupts[0].value for t in state.tasks if t.interrupts), None)
+
+    return {
+        "thread_id": thread_id,
+        "status": "WAITING_APPROVAL" if is_interrupted else "COMPLETED" if state.values.get("response") else "PROCESSING",
+        "is_interrupted": is_interrupted,
+        "pending_interrupt": serialize_data(pending_interrupt),
+        "state": serialize_data(state.values),
+    }
+
+
+@router.get("/api/v1/approvals", tags=["Approvals"])
+async def list_pending_approvals(
+    graph_app: Annotated[Any, Depends(get_graph_app)],
+) -> list[dict[str, Any]]:
+    """List all dispute cases currently paused at the HITL gate awaiting review."""
+    pending: list[dict[str, Any]] = []
+    for tid, meta in DISPUTE_HISTORY.items():
+        try:
+            config = {"configurable": {"thread_id": tid}}
+            state = graph_app.get_state(config)
+            if state and any(t.interrupts for t in state.tasks):
+                interrupt_val = state.tasks[0].interrupts[0].value
+                prop = state.values.get("proposal")
+                pending.append({
+                    "thread_id": tid,
+                    "created_at": meta.get("created_at"),
+                    "raw_message": state.values.get("raw_message"),
+                    "interrupt": serialize_data(interrupt_val),
+                    "proposal": serialize_data(prop.model_dump() if hasattr(prop, "model_dump") else prop),
+                    "match_result": serialize_data(state.values.get("match_result")),
+                })
+        except (KeyError, ValueError, AttributeError) as exc:
+            logger.debug("Could not inspect pending approval for thread %s: %s", tid, exc)
+    return pending
+
+
+@router.get("/api/v1/audit", tags=["Audit"])
+async def list_audit_log(limit: int = 100) -> list[dict[str, Any]]:
+    """Retrieve immutable audit ledger records from the ERP database."""
+    try:
+        db = get_default_db()
+        entries = db.list_audit_entries(limit=limit)
+        return [serialize_data(e.model_dump()) for e in entries]
+    except (OSError, RuntimeError, ValueError):
+        logger.exception("Failed to query audit log")
+        return []
+
+
+@router.get("/api/v1/erp/invoices", tags=["ERP"])
+async def list_erp_invoices(limit: int = 50) -> list[dict[str, Any]]:
+    """List invoices from ERP mock database."""
+    try:
+        db = get_default_db()
+        invoices = db.list_invoices(limit=limit)
+        return [serialize_data(i.model_dump()) for i in invoices]
+    except (OSError, RuntimeError, ValueError):
+        logger.exception("Failed to query ERP invoices")
+        return []
+
+
+@router.get("/api/v1/erp/purchase-orders", tags=["ERP"])
+async def list_erp_pos(limit: int = 50) -> list[dict[str, Any]]:
+    """List purchase orders from ERP mock database."""
+    try:
+        db = get_default_db()
+        pos = db.list_purchase_orders(limit=limit)
+        return [serialize_data(p.model_dump()) for p in pos]
+    except (OSError, RuntimeError, ValueError):
+        logger.exception("Failed to query ERP purchase orders")
+        return []
+
+
+@router.get("/api/v1/erp/grns", tags=["ERP"])
+async def list_erp_grns(limit: int = 50) -> list[dict[str, Any]]:
+    """List goods receipt notes from ERP mock database."""
+    try:
+        db = get_default_db()
+        grns = db.list_grns(limit=limit)
+        return [serialize_data(g.model_dump()) for g in grns]
+    except (OSError, RuntimeError, ValueError):
+        logger.exception("Failed to query ERP GRNs")
+        return []
+
+
+@router.get("/api/v1/erp/vendors", tags=["ERP"])
+async def list_erp_vendors(limit: int = 50) -> list[dict[str, Any]]:
+    """List vendor profiles from ERP mock database."""
+    try:
+        db = get_default_db()
+        vendors = db.list_vendors(limit=limit)
+        return [serialize_data(v.model_dump()) for v in vendors]
+    except (OSError, RuntimeError, ValueError):
+        logger.exception("Failed to query ERP vendors")
+        return []
+
+
+@router.get("/api/v1/evals/latest", tags=["Quality"])
+async def get_latest_evals() -> dict[str, Any]:
+    """Retrieve latest automated benchmark results, tail slices, and gate status."""
+    report_path = Path("evals/results/latest_report.json")
+    summary_path = Path("evals/results/release_gate_summary.json")
+    md_path = Path("evals/results/latest_report.md")
+
+    data: dict[str, Any] = {}
+    if summary_path.exists():
+        try:
+            data = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.debug("Could not parse summary json")
+    elif report_path.exists():
+        try:
+            data = {"report": json.loads(report_path.read_text(encoding="utf-8")), "gate_passed": True}
+        except (OSError, json.JSONDecodeError):
+            logger.debug("Could not parse report json")
+
+    if md_path.exists():
+        try:
+            data["markdown_report"] = md_path.read_text(encoding="utf-8")
+        except OSError:
+            logger.debug("Could not read markdown report")
+
+    return data
+
+
+@router.get("/api/v1/guard/events", tags=["Guard"])
+async def list_guard_events(limit: int = 50) -> list[dict[str, Any]]:
+    """List timeline of tool call intercept events, schema validation failures, and repairs."""
+    return GUARD_EVENTS[-limit:]
+

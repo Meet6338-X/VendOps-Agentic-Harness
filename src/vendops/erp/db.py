@@ -663,6 +663,90 @@ class ERPDatabase:
             if self._in_memory_conn is None:
                 conn.close()
 
+    def list_invoices(self, limit: int = 50) -> list[Invoice]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.execute("SELECT invoice_id FROM invoices LIMIT ?", (limit,))
+            invoices: list[Invoice] = []
+            for row in cursor.fetchall():
+                inv = self.get_invoice(row["invoice_id"])
+                if inv:
+                    invoices.append(inv)
+            return invoices
+        finally:
+            if self._in_memory_conn is None:
+                conn.close()
+
+    def list_purchase_orders(self, limit: int = 50) -> list[PurchaseOrder]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.execute("SELECT po_id FROM purchase_orders LIMIT ?", (limit,))
+            pos: list[PurchaseOrder] = []
+            for row in cursor.fetchall():
+                po = self.get_purchase_order(row["po_id"])
+                if po:
+                    pos.append(po)
+            return pos
+        finally:
+            if self._in_memory_conn is None:
+                conn.close()
+
+    def list_grns(self, limit: int = 50) -> list[GoodsReceiptNote]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.execute("SELECT grn_id FROM goods_receipt_notes LIMIT ?", (limit,))
+            grns: list[GoodsReceiptNote] = []
+            for row in cursor.fetchall():
+                grn = self.get_grn(row["grn_id"])
+                if grn:
+                    grns.append(grn)
+            return grns
+        finally:
+            if self._in_memory_conn is None:
+                conn.close()
+
+    def list_vendors(self, limit: int = 50) -> list[Vendor]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.execute("SELECT vendor_id FROM vendors LIMIT ?", (limit,))
+            vendors: list[Vendor] = []
+            for row in cursor.fetchall():
+                v = self.get_vendor(row["vendor_id"])
+                if v:
+                    vendors.append(v)
+            return vendors
+        finally:
+            if self._in_memory_conn is None:
+                conn.close()
+
+    def list_audit_entries(self, limit: int = 100) -> list[AuditEntry]:
+        conn = self.get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            )
+            entries: list[AuditEntry] = []
+            for row in cursor.fetchall():
+                entries.append(
+                    AuditEntry(
+                        audit_id=row["audit_id"],
+                        timestamp=datetime.fromisoformat(row["timestamp"]),
+                        action=ActionType(row["action"]),
+                        invoice_id=row["invoice_id"],
+                        po_id=row["po_id"],
+                        vendor_id=row["vendor_id"],
+                        amount=row["amount"],
+                        rationale=row["rationale"],
+                        idempotency_key=row["idempotency_key"],
+                        reviewer_id=row["reviewer_id"],
+                    )
+                )
+            return entries
+        finally:
+            if self._in_memory_conn is None:
+                conn.close()
+
 
 # Default singleton instance
 _default_db: ERPDatabase | None = None
