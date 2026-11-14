@@ -1,77 +1,171 @@
-# Mathematical Metric Definitions & Evaluation Standards
+# VendOps Evaluation & Release Gate Metrics Specification
 
-This document establishes the formal definitions, formulas, and evaluation methodology for benchmarked metrics in **VendOps**.
+## 1. Overview & Core Philosophy
 
----
+This document defines the formal mathematical metrics, evaluation methodologies, and threshold gates used to qualify the **VendOps** multi-agent dispute resolution harness for production release.
 
-## 1. Entity Word Error Rate (Entity-WER)
-
-Entity-WER measures extraction fidelity specifically across canonical enterprise entities (Invoice IDs, Purchase Order IDs, Goods Receipt Note IDs, Vendor IDs, and monetary amounts). Unlike standard sentence-level WER, Entity-WER evaluates the set of extracted entities against the gold annotated entities.
-
-### Mathematical Definition
-
-$$\text{Entity-WER} = \frac{S + D + I}{N_{\text{gold}}}$$
-
-Where:
-- $S$: **Substitutions** — an extracted entity that partially matches a gold entity but has transcription or OCR character corruption.
-- $D$: **Deletions** — a gold entity present in the message that was completely omitted by the extraction system.
-- $I$: **Insertions** — a hallucinated or non-existent entity extracted by the system that has no gold counterpart.
-- $N_{\text{gold}}$: Total count of gold entities in the reference annotation ($N_{\text{gold}} = \sum (\text{INV} + \text{PO} + \text{GRN} + \text{VND} + \text{Amount})$).
-
-### Target Threshold
-$$\text{Overall Entity-WER} \le 3.0\%$$
+Evaluating enterprise financial workflows requires zero tolerance for hallucinations and rigorous tracking across multilingual code-mixed language variations, OCR noise, and edge-case dispute structures.
 
 ---
 
-## 2. Task Completion Rate (TCR)
+## 2. Mathematical Metric Definitions
 
-Task Completion Rate evaluates end-to-end operational accuracy for the resolved dispute.
+### 2.1 Entity Word Error Rate (Entity-WER)
 
-### Definition
-For each evaluation sample $i \in \{1, \dots, M\}$:
+Entity extraction fidelity measures the accuracy with which canonical business identifiers (`INV-...`, `PO-...`, `GRN-...`, `VND-...`) and monetary dispute amounts are extracted from unstructured vendor communications.
 
-$$\text{TCR}_i = \begin{cases} 
-1.0 & \text{if } \text{Action}_i = \text{Action}_{\text{gold}, i} \land |\text{Amount}_i - \text{Amount}_{\text{gold}, i}| \le \epsilon \land \text{Violations}_i = 0 \\
-0.0 & \text{otherwise}
+Let $G$ denote the multiset of ground-truth (gold) entity tokens and $P$ denote the multiset of predicted entity tokens for a given test instance.
+
+The optimal alignment between $G$ and $P$ yields:
+- $C = |G \cap P|$ : Correctly extracted entities (true positives).
+- $U_G = |G| - C$ : Unmatched gold entities.
+- $U_P = |P| - C$ : Unmatched predicted entities.
+
+From these, standard Levenshtein/WER components are derived:
+- **Substitutions ($S$)**: Misidentified entities where a gold entity is replaced by an incorrect predicted entity:
+  $$S = \min(U_G, U_P)$$
+- **Deletions ($D$)**: Missed gold entities (false negatives):
+  $$D = U_G - S$$
+- **Insertions ($I$)**: Spurious or hallucinated entity extractions (false positives):
+  $$I = U_P - S$$
+
+The **Entity-WER** is computed as:
+
+$$\text{Entity-WER} = \frac{S + D + I}{N}$$
+
+where $N = |G|$ is the total number of gold entities ($N > 0$).
+*Boundary condition*: If $N = 0$, $\text{Entity-WER} = 0.0$ if $I = 0$; otherwise $\text{Entity-WER} = 1.0$.
+
+Note that:
+$$S + D + I = \min(U_G, U_P) + (U_G - \min(U_G, U_P)) + (U_P - \min(U_G, U_P)) = \max(U_G, U_P)$$
+
+#### Per-Entity-Type Entity-WER
+Entity-WER is computed individually for each canonical entity domain:
+1. **Invoice IDs (`invoice_ids`)**: Canonical pattern `^INV-\d{8}$`
+2. **Purchase Order IDs (`po_ids`)**: Canonical pattern `^PO-\d{8}$`
+3. **Goods Receipt Note IDs (`grn_ids`)**: Canonical pattern `^GRN-\d{8}$`
+4. **Vendor IDs (`vendor_ids`)**: Canonical pattern `^VND-\d{6}$`
+5. **Disputed Amount (`amount`)**: Floating point currency value matching within $\pm \$0.01$ tolerance.
+
+#### Overall Corpus Entity-WER
+Aggregated across all evaluated instances $i \in \{1, \dots, M\}$ and all entity types $t \in T$:
+
+$$\text{Overall Entity-WER} = \frac{\sum_{i=1}^M \sum_{t \in T} (S_{i,t} + D_{i,t} + I_{i,t})}{\sum_{i=1}^M \sum_{t \in T} N_{i,t}}$$
+
+**Production Gate Threshold**:
+$$\text{Overall Entity-WER} \le 3.0\% \quad (0.030)$$
+
+---
+
+### 2.2 Task Completion Rate (TCR)
+
+Task Completion Rate measures whether the end-to-end agent workflow reached the exact legally and contractually sound business resolution without violating policy constraints.
+
+For case $i$:
+
+$$\text{TCR}_i = \begin{cases}
+1.0, & \text{if } a_{\text{pred}} = a_{\text{gold}} \;\land\; \text{AmountMatches}(m_{\text{pred}}, m_{\text{gold}}) \;\land\; \neg \text{PolicyViolation}_i \\
+0.0, & \text{otherwise}
 \end{cases}$$
 
+Where:
+- $a_{\text{pred}}, a_{\text{gold}} \in \text{ActionType}$: Must strictly match the canonical action enum (`RELEASE_PAYMENT`, `PARTIAL_PAYMENT`, `CREDIT_NOTE`, `REPLACEMENT`, `REJECT`, `ESCALATE`).
+- $\text{AmountMatches}(m_{\text{pred}}, m_{\text{gold}})$:
+  - If both amounts are `None` (e.g. rejection or query): `True`.
+  - If both amounts are numeric: $|m_{\text{pred}} - m_{\text{gold}}| \le 0.01$.
+  - Otherwise: `False`.
+- $\text{PolicyViolation}_i$: Evaluates to `True` if:
+  1. A hallucinated or unverified ID was submitted to an ERP tool.
+  2. Free-text mutation actions were executed outside the `ActionType` enum.
+  3. Release amount exceeded policy limits without required Human-in-the-Loop review.
+
+Corpus-level TCR:
 $$\text{TCR} = \frac{1}{M} \sum_{i=1}^M \text{TCR}_i$$
 
-Where:
-- $\epsilon = 0.01$ (monetary tolerance for floating-point rounding).
-- $\text{Violations}_i = 0$: No unauthorized tool calls, no ERP provenance violations, and no unapproved executions over `HIGH_VALUE_THRESHOLD`.
+**Production Gate Requirement**:
+$$\text{Worst-Slice TCR} \ge 85.0\% \quad (0.850)$$
 
 ---
 
-## 3. Tail-Segmented Analysis
+### 2.3 Hallucinated Tool-Calls Reaching ERP
 
-A global average obscures catastrophic failures on minority code-mix dialects. VendOps evaluates performance segmented across 6 tail slices:
+In accordance with the **VendOps Multi-Agent Operating Contract**:
+- Every tool parameter passed to ERP tools (`GetInvoiceInput`, `GetPurchaseOrderInput`, `GetGRNInput`, `GetVendorInput`, `ExecuteResolutionInput`) must satisfy the **Provenance Check**:
+  $$\text{ID} \in \text{MessageProvenanceIDs} \cup \text{VerifiedERPResponses}$$
+- Zero hallucination policy:
+  $$\text{Hallucinated Tool Calls} = 0$$
+
+Any single tool call targeting an ungrounded ID fails the release gate immediately.
+
+---
+
+### 2.4 Handling-Time Reduction (%)
+
+Calculates the operational velocity improvement dynamically using empirical manual benchmarks from `docs/BASELINE.md`.
+
+$$\text{Reduction (\%)} = \left( \frac{\sum_{i=1}^M T_{\text{manual}}(c_i) - \sum_{i=1}^M T_{\text{auto}}(c_i)}{\sum_{i=1}^M T_{\text{manual}}(c_i)} \right) \times 100\%$$
+
+Where:
+- $T_{\text{manual}}(c_i)$ is resolved dynamically per `c_i.dispute_type` from `docs/BASELINE.md`.
+- $T_{\text{auto}}(c_i)$ accounts for straight-through automation (0.25 min) vs HITL review (3.50 min) vs manual fallback (if case failed).
+
+---
+
+## 3. Tail-Segmented Slicing Engine
+
+To prevent high-performing majority classes (e.g. clean English queries) from masking catastrophic failure modes in difficult distributions, results are partitioned across five orthogonal dimensions:
 
 1. **Script**:
-   - `en` (Pure English / Latin)
-   - `hi-Latn` (Roman-script Hinglish)
-   - `hi-Deva` (Devanagari script)
-   - `mixed` (Mixed Devanagari + Latin)
+   - `latin`: Pure English or Roman Hinglish.
+   - `devanagari`: Native Devanagari script.
+   - `mixed`: Interleaved Devanagari and Latin script in a single message.
 2. **Code-Mix Index (CMI)**:
-   - Low ($CMI < 0.2$)
-   - Medium ($0.2 \le CMI \le 0.5$)
-   - High ($CMI > 0.5$)
-3. **Token Fertility**:
-   - Low ($< 1.5$ tokens/word)
-   - High ($\ge 1.5$ tokens/word, typical in phonetic Hinglish)
-4. **Thread Length**:
-   - Single turn ($1$ turn)
-   - Multi-turn ($2\text{--}5$ turns)
-   - Long thread ($> 5$ turns, triggers context compression)
-5. **Entity Density**:
-   - Sparse ($1\text{--}2$ entities)
-   - Dense ($\ge 3$ distinct entities)
-6. **Noise Level**:
-   - Clean
-   - OCR / Typographical noise
+   - `pure_english`: $\text{CMI} = 0.0$
+   - `low_mix`: $0.0 < \text{CMI} \le 0.3$
+   - `medium_mix`: $0.3 < \text{CMI} \le 0.6$
+   - `high_mix`: $\text{CMI} > 0.6$
+3. **Token Fertility Bucket**:
+   - `low`: Token/word ratio $< 1.30$
+   - `medium`: $1.30 \le \text{Token/word ratio} \le 1.80$
+   - `high`: Token/word ratio $> 1.80$ (typical of morphologically rich Indic tokenization)
+4. **Thread Depth**:
+   - `single_turn`: 1 message turn
+   - `multi_turn`: 2 to 3 message turns
+   - `deep_thread`: 4 or more turns
+5. **Noise & OCR Artifact Level**:
+   - `clean`: No OCR noise or visual distortion
+   - `low`: Occasional casing or minor punctuation variance
+   - `medium`: Character substitutions (e.g. `l` $\to$ `1`, `O` $\to$ `0`, `rn` $\to$ `m`)
+   - `high`: Heavy scanning noise, spacing disruptions, and OCR artifacts
 
-### Release Gate Rule
-The release gate verifies both **Overall** metrics and the **Worst-Slice** floor:
-- $\text{Overall Entity-WER} \le 3.0\%$
-- $\min_{\text{slice}} \text{TCR}_{\text{slice}} \ge 80.0\%$
-- $\text{Hallucinated Tool Calls Reaching ERP} = 0$
+### Worst-Slice Evaluation
+The slicing engine computes TCR and Entity-WER independently across all slices with adequate sample support ($N \ge 5$). The release gate checks:
+
+$$\min_{s \in \text{Slices}} \text{TCR}_s \ge 85.0\%$$
+$$\max_{s \in \text{Slices}} \text{Entity-WER}_s \le 12.0\%$$
+
+---
+
+## 4. Context Compression Ablation Metrics
+
+VendOps implements a `context_compress` node designed to summarize long email threads and strip non-essential conversational context prior to expensive LLM reasoning nodes.
+
+The evaluation runner runs comparative passes (`compressed=True` vs `compressed=False`) and logs:
+1. **Token Delta %**:
+   $$\Delta_{\text{tokens}} = \frac{\text{Tokens}_{\text{uncompressed}} - \text{Tokens}_{\text{compressed}}}{\text{Tokens}_{\text{uncompressed}}} \times 100\%$$
+2. **Latency Delta**:
+   $$\Delta_{\text{latency}} = \text{Latency}_{\text{uncompressed}} - \text{Latency}_{\text{compressed}} \quad (\text{ms})$$
+3. **Accuracy Parity**:
+   $$\Delta_{\text{TCR}} = \text{TCR}_{\text{compressed}} - \text{TCR}_{\text{uncompressed}}$$
+   *Acceptance condition*: Context compression must yield $\ge 30\%$ token reduction while maintaining $|\Delta_{\text{TCR}}| \le 2.0\%$.
+
+---
+
+## 5. Release Gate Summary Table
+
+| Gate Metric | Threshold | Failure Action |
+|---|---|---|
+| **Overall Entity-WER** | $\le 3.0\%$ | Reject build (Exit Code 1) |
+| **Worst-Slice TCR** | $\ge 85.0\%$ | Reject build (Exit Code 1) |
+| **Hallucinated ERP Tool Calls** | $0$ (Zero tolerance) | Reject build (Exit Code 1) |
+| **Handling Time Reduction** | $\ge 70.0\%$ | Warning alert if $< 70\%$ |
