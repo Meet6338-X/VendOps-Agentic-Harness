@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -11,20 +12,24 @@ from vendops.rag.ingest import ingest_all
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan: initialize Qdrant store collections and ingest policies."""
+def _seed_sync() -> None:
+    """Synchronous seeding of Qdrant collections."""
     try:
         client = get_qdrant_client()
         store = get_rag_store(client=client)
         store.ensure_collections()
-        # Seed SOP policies if collection is empty
         if store.count("sop_policies") == 0:
             counts = ingest_all(store)
             logger.info("Initialized RAG collections on startup: %s", counts)
     except (OSError, RuntimeError, ValueError) as exc:
-        logger.warning("Could not auto-seed RAG collections on startup: %s", exc)
+        logger.warning("Could not auto-seed RAG collections: %s", exc)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan: non-blocking startup with background RAG warmup."""
+    # Warmup and seed in background task so server binds and serves health immediately
+    asyncio.create_task(asyncio.to_thread(_seed_sync))
     yield
 
 

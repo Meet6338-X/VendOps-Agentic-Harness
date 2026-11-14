@@ -5,42 +5,40 @@ echo ======================================================================
 echo                VENDOPS AGENTIC HARNESS - STARTUP
 echo ======================================================================
 
-echo [1/4] Checking and starting Qdrant Vector Store via Docker...
-docker compose up -d qdrant
+echo [1/3] Starting VendOps unified container stack (API + Qdrant)...
+docker compose up -d
 if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Failed to start Qdrant container. Please ensure Docker Desktop is running.
+    echo [ERROR] Failed to start Docker Compose services. Please ensure Docker Desktop is running.
     exit /b 1
 )
 
-echo [2/4] Waiting for Qdrant health check on http://localhost:6333/healthz...
-set RETRIES=15
-:wait_qdrant
-curl -s -f http://localhost:6333/healthz >nul 2>&1
+echo [2/3] Waiting for VendOps API health check on http://localhost:8000/healthz...
+set RETRIES=20
+:wait_api
+curl -s -f http://localhost:8000/healthz >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo [OK] Qdrant is healthy and responding.
-    goto seed_erp
+    echo [OK] VendOps service is healthy and responding.
+    goto ready
 )
 set /a RETRIES-=1
 if %RETRIES% LEQ 0 (
-    echo [WARNING] Qdrant health check timed out. Continuing with local fallback...
-    goto seed_erp
+    echo [WARNING] Health check wait timed out. Checking docker status...
+    docker ps
+    goto ready
 )
 timeout /t 1 /nobreak >nul
-goto wait_qdrant
+goto wait_api
 
-:seed_erp
-echo [3/4] Ensuring local SQLite ERP database is seeded...
-uv run python -c "from vendops.erp.db import ERPDatabase; from vendops.erp.seed import seed_database; seed_database(ERPDatabase('vendops_erp.db'))"
-echo [OK] ERP database ready.
-
-echo [4/4] Starting VendOps FastAPI and SSE Service on port 8000...
+:ready
+echo [3/3] System is online and ready!
 echo ----------------------------------------------------------------------
 echo Web API and Docs : http://localhost:8000/docs
-echo Health Check     : http://localhost:8000/healthz
+echo Health Checks    : http://localhost:8000/health  ^|  http://localhost:8000/healthz
 echo Qdrant Web UI    : http://localhost:6333/dashboard
 echo ----------------------------------------------------------------------
-echo Starting server in a new window (Run stop.bat to shut down)...
-start "VendOps-API-Server" cmd /k "uv run uvicorn vendops.api.main:app --host 0.0.0.0 --port 8000"
-
-echo [SUCCESS] VendOps services successfully launched!
+echo Running Containers:
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+echo ----------------------------------------------------------------------
+echo Run stop.bat to shut down all containers.
+echo ======================================================================
 exit /b 0

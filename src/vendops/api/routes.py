@@ -41,6 +41,8 @@ def serialize_data(val: Any) -> Any:
     return val
 
 
+@router.get("/", tags=["System"])
+@router.get("/health", tags=["System"])
 @router.get("/healthz", tags=["System"])
 async def health_check(
     qdrant: Annotated[QdrantClient, Depends(get_qdrant_client)],
@@ -57,6 +59,8 @@ async def health_check(
 
     payload = {
         "status": "healthy" if is_healthy else "degraded",
+        "service": "VendOps Dispute Resolution & RAG Service",
+        "docs": "/docs",
         "timestamp": datetime.now().isoformat(),
         "services": {
             "api": "healthy",

@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+qdrant_storage/
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
