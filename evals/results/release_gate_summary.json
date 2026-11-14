@@ -15,7 +15,7 @@
       "token_reduction_pct": 45.92,
       "uncompressed_tokens": 200465,
       "compressed_tokens": 108411,
-      "latency_speedup_ms": 25.07,
+      "latency_speedup_ms": 25.05,
       "tcr_parity": 0.0
     },
     "gate_passed": true,
