@@ -12,7 +12,9 @@
 [![Pydantic v2](https://img.shields.io/badge/contracts-Pydantic_v2-e92063.svg?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Mypy](https://img.shields.io/badge/types-mypy_strict-blue.svg)](https://mypy.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-92_passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-93_passed-brightgreen.svg)]()
+[![Web UI](https://img.shields.io/badge/web_ui-Next.js_15-black.svg?logo=next.js&logoColor=white)](https://github.com/Meet6338-X/vendops-ui)
+[![OCR](https://img.shields.io/badge/ocr-EasyOCR_Multilingual-orange.svg)](ocr/easyocr)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 <br/>
@@ -204,6 +206,31 @@ uv run poe test
 uv run poe lint
 uv run poe typecheck
 ```
+
+### 3. Terminal User Interface (TUI)
+For interactive operational inspection and headless testing directly in your terminal:
+```powershell
+# Launch the High-ASCII TUI dashboard
+tui
+# or
+python bin\vendops-tui.py
+```
+
+### 4. Web UI Portal (Next.js 15 + Industrial Dark)
+The production web frontend is hosted in the sibling repository **[`vendops-ui`](https://github.com/Meet6338-X/vendops-ui)**:
+- **Mission Control**: 4-column KPI telemetry grid and live health indicators.
+- **Submit Console**: Real-time dialect classifier (Hinglish/Devanagari/English) with one-click test presets.
+- **Live Run View**: Interactive `@xyflow/react` pipeline graph lighting up nodes in real time from SSE events.
+- **HITL Approvals Queue**: Sign-off modal with mandatory Reviewer ID and audit notes.
+- **Compliance Ledger**: Searchable audit entries with client-side RFC-4180 CSV export.
+- **ERP Explorer**: 4 relational tables (Invoices, POs, GRNs, Vendors) with dispute cross-linking.
+- **Quality Dashboard**: Slices heatmap and -45.9% context compression ablation metrics.
+- **Guard Inspector**: 3-tier security perimeter and interactive provenance sandbox.
+
+### 5. Multilingual Invoice OCR Engine
+Integrated with **`JaidedAI/EasyOCR`** (`ocr/easyocr`):
+- Endpoint: `POST /api/v1/ocr/extract`
+- Supports scanned Latin and Devanagari invoices and delivery receipts, extracting text, canonical IDs (`INV-...`, `PO-...`, `GRN-...`, `VND-...`), and detected currency amounts.
 
 ---
 
