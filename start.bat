@@ -26,7 +26,7 @@ if %RETRIES% LEQ 0 (
     docker ps
     goto ready
 )
-timeout /t 1 /nobreak >nul
+ping 127.0.0.1 -n 2 >nul
 goto wait_api
 
 :ready
