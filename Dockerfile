@@ -15,6 +15,7 @@ RUN uv sync --frozen --no-install-project
 # Copy project source and references
 COPY src/ ./src/
 COPY vendor/ ./vendor/
+COPY evals/ ./evals/
 COPY README.md AGENTS.md ./
 
 # Install project into virtualenv

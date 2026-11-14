@@ -233,3 +233,14 @@ async def test_ui_additive_endpoints(async_client: httpx.AsyncClient) -> None:
     guard_res = await async_client.get("/api/v1/guard/events")
     assert guard_res.status_code == 200
     assert isinstance(guard_res.json(), list)
+
+    # 6. POST /api/v1/ocr/extract
+    sample_text = b"Invoice INV-20240105 for PO-20240105 total amount $4,500.00"
+    ocr_res = await async_client.post(
+        "/api/v1/ocr/extract",
+        files={"file": ("invoice_sample.txt", sample_text, "text/plain")},
+    )
+    assert ocr_res.status_code == 200
+    ocr_data = ocr_res.json()
+    assert "INV-20240105" in ocr_data["canonical_ids"]
+    assert ocr_data["detected_amount"] == 4500.0

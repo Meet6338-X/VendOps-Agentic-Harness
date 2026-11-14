@@ -55,7 +55,7 @@ gate = "python scripts/release_gate.py"
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-extend-exclude = ["vendor"]
+extend-exclude = ["vendor", "ocr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from vendops.api.deps import get_graph_app, get_qdrant_client
 from vendops.contracts.schemas import ResolutionReview, VendorMessageInput
 from vendops.contracts.state import VendOpsState
 from vendops.erp.db import get_default_db
+from vendops.ocr.service import get_ocr_service
 
 logger = logging.getLogger(__name__)
 
@@ -452,4 +453,12 @@ async def get_latest_evals() -> dict[str, Any]:
 async def list_guard_events(limit: int = 50) -> list[dict[str, Any]]:
     """List timeline of tool call intercept events, schema validation failures, and repairs."""
     return GUARD_EVENTS[-limit:]
+
+
+@router.post("/api/v1/ocr/extract", tags=["OCR"])
+async def extract_ocr(file: UploadFile) -> dict[str, Any]:
+    """Extract raw text, canonical IDs, and amounts from scanned invoice images or PDFs."""
+    content = await file.read()
+    service = get_ocr_service()
+    return service.extract_from_bytes(content, filename=file.filename or "uploaded_invoice")
 
