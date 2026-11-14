@@ -48,9 +48,9 @@ lint = "ruff check ."
 typecheck = "mypy src"
 qdrant-up = "docker compose up -d qdrant"
 qdrant-down = "docker compose down"
-demo = "python -c \"print('not implemented yet')\""
-eval = "python -c \"print('not implemented yet')\""
-gate = "python -c \"print('not implemented yet')\""
+demo = "python scripts/demo.py"
+eval = "python evals/run_eval.py"
+gate = "python scripts/release_gate.py"
 
 [tool.ruff]
 target-version = "py312"

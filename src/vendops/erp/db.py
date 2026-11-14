@@ -35,14 +35,14 @@ class ERPDatabase:
 
         self._in_memory_conn: sqlite3.Connection | None = None
         if str(self.db_path) == ":memory:":
-            self._in_memory_conn = sqlite3.connect(":memory:")
+            self._in_memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._in_memory_conn.row_factory = sqlite3.Row
             self._in_memory_conn.execute("PRAGMA foreign_keys = ON;")
 
     def get_connection(self) -> sqlite3.Connection:
         if self._in_memory_conn is not None:
             return self._in_memory_conn
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
