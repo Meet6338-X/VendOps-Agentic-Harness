@@ -55,6 +55,8 @@ graph TD
 ```
 
 ### Core Architecture Layers:
+> 📚 **Detailed Technical Guide**: Read **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)** for a deep-dive on every algorithm, prompt strategy, and state transition.
+
 1. **Ingest & Normalize**: Strips signatures, standardizes Unicode (NFKC), converts Devanagari numerals (`०-९` $\rightarrow$ `0-9`), and handles code-mixed phonetic variants.
 2. **Context Compression**: Calculates token fertility (tokens/word) across multilingual slices. When message length exceeds budgets, it adaptively compresses history while strictly preserving 100% of canonical IDs (`INV-...`, `PO-...`, `GRN-...`, `VND-...`), amounts, and vendor names.
 3. **Triage & Classification**: Categorizes disputes into `DisputeType` (`PAYMENT_DELAY`, `SHORT_PAYMENT`, `PRICE_MISMATCH`, `QTY_MISMATCH`, `MISSING_GRN`, `DUPLICATE_INVOICE`, `OTHER`) with confidence scores.

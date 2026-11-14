@@ -2,6 +2,8 @@
 
 VendOps is an autonomous agentic harness designed for enterprise accounts payable (AP) and vendor dispute resolution. It reconciles disputed claims against enterprise ERP data using LangGraph stateful orchestration, official Python Model Context Protocol (MCP 2.x), Qdrant vector retrieval, and human-in-the-loop (HITL) approval gates.
 
+> 📖 **Deep Dive Guide**: For a step-by-step breakdown of every component, node, math formula, and contract, see **[docs/HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
+
 ---
 
 ## 1. End-to-End Pipeline
